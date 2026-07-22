@@ -92,6 +92,17 @@ main{max-width:960px;margin:0 auto;padding:22px 18px 90px}
 .card-item .back{color:var(--muted);font-size:13.5px;white-space:pre-wrap}
 .card-item .cfoot{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
 cloze{background:var(--accent-soft);color:var(--accent);border-radius:5px;padding:0 5px;font-weight:600}
+/* ---------- Reordenar cards ---------- */
+.reorder-list{display:flex;flex-direction:column;gap:7px}
+.reorder-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 12px;cursor:grab}
+.reorder-row.dragging{opacity:.45}
+.reorder-row.drop-target{border-color:var(--accent);border-style:dashed}
+.reorder-row .ro-handle{color:var(--muted);font-size:17px;flex:none;letter-spacing:-3px;user-select:none}
+.reorder-row .ro-num{color:var(--muted);font-size:12px;font-weight:700;flex:none;width:22px;text-align:right}
+.reorder-row .ro-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.reorder-row .ro-btns{display:flex;gap:5px;flex:none}
+.reorder-row .ro-btns button{min-width:36px}
+.reorder-row .ro-btns button:disabled{opacity:.3;cursor:default}
 /* ---------- Sessão de estudo ---------- */
 #session-overlay{position:fixed;inset:0;background:var(--bg);z-index:100;display:none;overflow-y:auto}
 #session-overlay.open{display:block}
@@ -669,7 +680,57 @@ function renderDecks(){
   $$('#deck-areas .deck-tile').forEach(t => t.onclick = () => openDeckPage(t.dataset.deck));
 }
 
-function openDeckPage(deckId, search=''){
+/* ---------- reordenar cards de um deck ---------- */
+let deckReorder = false; // modo de reordenação ativo na página do deck
+function reorderDeckCards(deckId, orderedIds){
+  const map = {}; cardsOfDeck(deckId).forEach(c => map[c.id] = c);
+  const ordered = orderedIds.map(id => map[id]).filter(Boolean);
+  let k = 0;
+  state.cards = state.cards.map(c => c.deckId === deckId ? ordered[k++] : c);
+  const d = deckById(deckId); if (d) logDeck(d, 'Cards reordenados');
+  save();
+}
+function moveCardInDeck(deckId, cardId, dir){
+  const ids = cardsOfDeck(deckId).map(c => c.id);
+  const i = ids.indexOf(cardId), j = i + dir;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  reorderDeckCards(deckId, ids);
+}
+function dropCardBefore(deckId, movingId, targetId){
+  let ids = cardsOfDeck(deckId).map(c => c.id).filter(id => id !== movingId);
+  const ti = ids.indexOf(targetId);
+  ids.splice(ti < 0 ? ids.length : ti, 0, movingId);
+  reorderDeckCards(deckId, ids);
+}
+function cardReorderHtml(c, i, n){
+  const label = c.type === 'cloze' ? clozeQuestion(c.text) : escapeHtml(c.front);
+  return `<div class="reorder-row" draggable="true" data-rid="${c.id}">
+    <span class="ro-handle" title="Arraste para reordenar">⠿</span>
+    <span class="ro-num">${i+1}</span>
+    <span class="ro-text">${label}</span>
+    <span class="ro-btns">
+      <button class="btn btn-sm" data-up="${c.id}" title="Mover para cima" ${i===0?'disabled':''}>↑</button>
+      <button class="btn btn-sm" data-down="${c.id}" title="Mover para baixo" ${i===n-1?'disabled':''}>↓</button>
+    </span>
+  </div>`;
+}
+function enableDeckDrag(deckId){
+  let dragId = null;
+  $$('#deck-cardlist .reorder-row').forEach(row => {
+    row.addEventListener('dragstart', e => { dragId = row.dataset.rid; row.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+    row.addEventListener('dragend', () => { row.classList.remove('dragging'); $$('#deck-cardlist .reorder-row').forEach(r => r.classList.remove('drop-target')); });
+    row.addEventListener('dragover', e => { e.preventDefault(); if (row.dataset.rid !== dragId) row.classList.add('drop-target'); });
+    row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+    row.addEventListener('drop', e => {
+      e.preventDefault(); row.classList.remove('drop-target');
+      if (dragId && row.dataset.rid !== dragId){ dropCardBefore(deckId, dragId, row.dataset.rid); openDeckPage(deckId, '', true); }
+    });
+  });
+}
+
+function openDeckPage(deckId, search='', keepReorder=false){
+  if (!keepReorder) deckReorder = false;
   const d = deckById(deckId); if (!d) return;
   const a = areaById(d.areaId);
   let cs = cardsOfDeck(deckId);
@@ -707,12 +768,20 @@ function openDeckPage(deckId, search=''){
       <button class="btn btn-primary" id="btn-deck-study-due" style="flex:1">▶ Estudar revisões (${deckDueCards(deckId).length})</button>
       <button class="btn" id="btn-deck-study-all" style="flex:1">▶ Estudar todos (${deckStudyCards(deckId).length})</button>
     </div>
+    ${deckReorder ? `
+    <div class="row searchbar" style="justify-content:space-between">
+      <span class="muted">↕ Arraste ⠿ ou use ↑↓ para reordenar. A ordem vale para a lista e para "Estudar todos".</span>
+      <button class="btn btn-primary btn-sm" id="btn-reorder-done">✓ Concluir</button>
+    </div>
+    <div id="deck-cardlist" class="reorder-list">${cardsOfDeck(deckId).map((c,i,arr) => cardReorderHtml(c,i,arr.length)).join('') || '<p class="muted">Nenhum card.</p>'}</div>`
+    : `
     <div class="row searchbar">
       <input id="deck-search" placeholder="🔍 Buscar cards ou #tag..." value="${escapeHtml(search)}" style="flex:1">
+      ${cardsOfDeck(deckId).length > 1 ? '<button class="btn btn-sm" id="btn-deck-reorder" title="Reordenar cards">↕ Reordenar</button>' : ''}
       <button class="btn btn-primary btn-sm" id="btn-deck-addcard">+ Card</button>
     </div>
-    <div id="deck-cardlist">${cs.map(c => cardItemHtml(c)).join('') || '<p class="muted">Nenhum card.</p>'}</div>`;
-  $('#btn-back-decks').onclick = () => { pg.style.display='none'; $('#decks-home').style.display='block'; renderDecks(); };
+    <div id="deck-cardlist">${cs.map(c => cardItemHtml(c)).join('') || '<p class="muted">Nenhum card.</p>'}</div>`}`;
+  $('#btn-back-decks').onclick = () => { deckReorder=false; pg.style.display='none'; $('#decks-home').style.display='block'; renderDecks(); };
   $('#btn-edit-deck').onclick = () => deckFormModal(d);
   $('#btn-del-deck').onclick = () => {
     if (!confirm(`Excluir o deck "${d.name}" e seus ${cardsOfDeck(deckId).length} cards?`)) return;
@@ -721,11 +790,19 @@ function openDeckPage(deckId, search=''){
     save(); toast('Deck excluído.');
     pg.style.display='none'; $('#decks-home').style.display='block'; renderDecks();
   };
+  $('#btn-deck-study-due').onclick = () => { deckReorder=false; startSession(deckDueCards(deckId).map(c=>c.id), { emptyMsg:'Nenhuma revisão pendente neste deck. 🎉', shuffle:true }); };
+  $('#btn-deck-study-all').onclick = () => { deckReorder=false; startSession(deckStudyCards(deckId).map(c=>c.id), { emptyMsg:'Nenhum card para estudar neste deck.' }); };
+  if (deckReorder){
+    $('#btn-reorder-done').onclick = () => { deckReorder=false; openDeckPage(deckId); };
+    $$('#deck-cardlist [data-up]').forEach(b => b.onclick = () => { moveCardInDeck(deckId, b.dataset.up, -1); openDeckPage(deckId, '', true); });
+    $$('#deck-cardlist [data-down]').forEach(b => b.onclick = () => { moveCardInDeck(deckId, b.dataset.down, 1); openDeckPage(deckId, '', true); });
+    enableDeckDrag(deckId);
+    return;
+  }
+  const reBtn = $('#btn-deck-reorder'); if (reBtn) reBtn.onclick = () => { deckReorder=true; openDeckPage(deckId, '', true); };
   $('#deck-search').oninput = e => openDeckPage(deckId, e.target.value);
   if (search) { const inp=$('#deck-search'); inp.focus(); inp.setSelectionRange(search.length,search.length); }
   $('#btn-deck-addcard').onclick = () => cardFormModal(null, deckId);
-  $('#btn-deck-study-due').onclick = () => startSession(deckDueCards(deckId).map(c=>c.id), { emptyMsg:'Nenhuma revisão pendente neste deck. 🎉' });
-  $('#btn-deck-study-all').onclick = () => startSession(deckStudyCards(deckId).map(c=>c.id), { emptyMsg:'Nenhum card para estudar neste deck.' });
   $$('#deck-cardlist [data-edit]').forEach(b => b.onclick = () => cardFormModal(state.cards.find(c=>c.id===b.dataset.edit)));
   $$('#deck-cardlist [data-dup]').forEach(b => b.onclick = () => {
     const src = state.cards.find(c => c.id === b.dataset.dup); if (!src) return;
@@ -1052,11 +1129,12 @@ function startSession(cardIds, opts){
   opts = opts || {};
   const q = [...cardIds];
   if (!q.length) return toast(opts.emptyMsg || 'Nada para revisar. 🎉');
+  if (opts.shuffle) for (let i = q.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
   sess = { queue: q, done: 0, total: q.length, startedAt: Date.now(), timeMs: 0, graded: 0, cardStart: 0 };
   $('#session-overlay').classList.add('open');
   nextCard();
 }
-$('#btn-study').onclick = () => startSession(dueCards().map(c=>c.id), { emptyMsg:'Nenhuma revisão pendente hoje. 🎉' });
+$('#btn-study').onclick = () => startSession(dueCards().map(c=>c.id), { emptyMsg:'Nenhuma revisão pendente hoje. 🎉', shuffle:true });
 $('#btn-sess-close').onclick = endSession;
 function endSession(){
   if (sess && sess.graded > 0){
@@ -1129,8 +1207,7 @@ function grade(G){
   logReview(c, G);
   if (!wasLeech && isLeech(c)) setTimeout(() => toast(`🩸 Leech detectado (${c.fsrs.lapses} erros). Veja em Estatísticas.`), 500);
   sess.queue.shift();
-  if (G === 1){ sess.queue.push(c.id); } // Errei: volta ao fim da fila
-  else sess.done++;
+  sess.done++; // "Errei" também conta como feito: o card sai da sessão e volta às revisões do dia após os ~10min do FSRS
   save();
   $('#streak-num').textContent = streakDisplay();
   nextCard();
