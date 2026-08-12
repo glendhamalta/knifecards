@@ -1,0 +1,16 @@
+{
+  "name": "knifecards",
+  "version": "2.0.0",
+  "description": "KnifeCards - Flashcards com sincronização iCloud",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": ["flashcards", "study"],
+  "author": "Glendha",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "latest"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/glendhamalta/Claude/Projects/Knifecards status)"
+    ]
+  }
+}

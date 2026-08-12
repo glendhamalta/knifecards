@@ -338,6 +338,7 @@ nav.tabs{overflow-x:auto}
       <button class="btn" id="btn-export">⬇ Exportar backup (.json)</button>
       <input type="file" id="import-file" accept=".json" style="display:none">
       <button class="btn" id="btn-import">⬆ Importar backup</button>
+      <button class="btn btn-danger" id="btn-clear-stats">Apagar estatísticas</button>
       <button class="btn btn-danger" id="btn-wipe">Apagar tudo</button>
     </div>
   </div>
@@ -848,10 +849,23 @@ function deckFormModal(deck){
     <label>Nome do deck</label><input id="f-deck-name" value="${escapeHtml(deck?.name||'')}">
     <label>Área cirúrgica</label><select id="f-deck-area">${areaOptionsHtml(deck?.areaId||state.areas[0].id)}</select>
     <label>Fonte bibliográfica</label><input id="f-deck-source" value="${escapeHtml(deck?.source||'')}" placeholder="Ex.: Sabiston 21ª ed.">
-    <div class="row" style="margin-top:16px;justify-content:flex-end">
-      <button class="btn" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="f-deck-save">Salvar</button>
+    <div class="row" style="margin-top:16px;justify-content:space-between">
+      <div>${deck?`<button class="btn btn-danger btn-sm" id="f-deck-reset">Estudar do zero</button>`:''}  </div>
+      <div>
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" id="f-deck-save">Salvar</button>
+      </div>
     </div>`);
+  if (deck) {
+    $('#f-deck-reset').onclick = () => {
+      if (!confirm('Resetar TODOS os cards deste deck como "novos"? Histórico de revisões será apagado.')) return;
+      if (!confirm('Tem certeza? Esta ação é irreversível.')) return;
+      const deckCards = state.cards.filter(c => c.deckId === deck.id);
+      deckCards.forEach(c => { c.fsrs = null; c.modifiedAt = Date.now(); });
+      logDeck(deck, 'Cards resetados para "novo"');
+      save(); closeModal(); openDeckPage(deck.id); toast(`${deckCards.length} cards resetados. Estude do zero! 🔄`);
+    };
+  }
   $('#f-deck-save').onclick = () => {
     const name = $('#f-deck-name').value.trim(); if (!name) return toast('Dê um nome ao deck.');
     if (deck){
@@ -1263,6 +1277,16 @@ $('#import-file').onchange = e => {
     } catch(err){ toast('Arquivo de backup inválido.'); }
   };
   r.readAsText(f);
+};
+$('#btn-clear-stats').onclick = () => {
+  if (!confirm('Apagar todas as estatísticas? (Decks e cards serão mantidos.)')) return;
+  if (!confirm('Tem certeza? Isto é irreversível.')) return;
+  state.streak = { current: 0, best: 0, lastStudyDate: null, history: {} };
+  state.newIntro = {};
+  state.revStats = {};
+  state.timeStats = {};
+  state.sessions = [];
+  save(); renderToday(); renderStats(); toast('Estatísticas apagadas. Seus decks e cards foram mantidos.');
 };
 $('#btn-wipe').onclick = () => {
   if (!confirm('Apagar TODOS os dados do KnifeCards? Esta ação é irreversível.')) return;
