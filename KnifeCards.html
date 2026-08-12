@@ -482,34 +482,14 @@ function defaultState(){
     sessions: []  // [{at, ms, cards}] histórico de sessões (mais recente primeiro)
   };
 }
-// Detectar se está rodando no Electron
-const isElectron = typeof window.icloud !== 'undefined';
-
-async function load(){
-  try {
-    let data;
-    if (isElectron) {
-      data = await window.icloud.load();
-    } else {
-      data = JSON.parse(localStorage.getItem(LS_KEY));
-    }
-    state = data || defaultState();
-  } catch(e){
-    state = defaultState();
-  }
+function load(){
+  try { state = JSON.parse(localStorage.getItem(LS_KEY)) || defaultState(); }
+  catch(e){ state = defaultState(); }
   const def = defaultState();
   for (const [k,v] of Object.entries(def)) if (!(k in state)) state[k] = v;
   for (const [k,v] of Object.entries(def.settings)) if (!(k in state.settings)) state.settings[k] = v;
 }
-
-async function save(){
-  state.lastModified = Date.now();
-  if (isElectron) {
-    await window.icloud.save(state);
-  } else {
-    localStorage.setItem(LS_KEY, JSON.stringify(state));
-  }
-}
+function save(){ state.lastModified = Date.now(); localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 const scheduler = () => FSRS6.make({ desiredRetention: state.settings.desiredRetention });
 
 /* ---------- helpers de dados ---------- */
@@ -1514,12 +1494,8 @@ $('#sync-gist').onchange = e => { syncCfg.gistId = e.target.value.trim() || null
 $('#btn-sync-now').onclick = () => syncNow(false);
 
 /* init */
-(async () => {
-  await load();
-  applyTheme();
-  renderToday();
-  if (syncCfg.token && syncCfg.gistId) setTimeout(() => syncNow(true), 600); // puxa a nuvem ao abrir
-})();
+load(); applyTheme(); renderToday();
+if (syncCfg.token && syncCfg.gistId) setTimeout(() => syncNow(true), 600); // puxa a nuvem ao abrir
 </script>
 </body>
 </html>
